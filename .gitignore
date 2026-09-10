@@ -11,3 +11,6 @@ wheels/
 
 # VS Code settings
 .vscode/
+
+# Local repository manifest
+repo-urls.txt
