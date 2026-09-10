@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<h1>{{ heading }}</h1>
+<p>Edit <code>templates/index.html</code> and refresh.</p>
+<ul>
+  {% for item in features %}
+  <li>{{ item }}</li>
+  {% endfor %}
+</ul>
+{% endblock %}

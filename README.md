@@ -8,7 +8,9 @@ uv run main.py
 
 Then open http://127.0.0.1:8000
 
-Static files live in `static/`; `static/index.html` is served at `/`.
+Pages are Jinja2 templates in `templates/`; `templates/index.html` is
+rendered at `/`. Static assets live in `static/` and are served under
+`/static`.
 
 ## Repository mirroring
 
