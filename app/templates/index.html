@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<h1>{{ heading }}</h1>
+<p>Edit <code>app/templates/index.html</code> and refresh.</p>
+<dl>
+  <dt>Python</dt>
+  <dd>{{ status.python }}</dd>
+  <dt>Uptime</dt>
+  <dd>{{ status.uptime_seconds }}s</dd>
+</dl>
+<p>The same data as JSON: <a href="/api/status">/api/status</a></p>
+{% endblock %}

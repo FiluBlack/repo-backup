@@ -8,9 +8,23 @@ uv run main.py
 
 Then open http://127.0.0.1:8000
 
-Pages are Jinja2 templates in `templates/`; `templates/index.html` is
-rendered at `/`. Static assets live in `static/` and are served under
-`/static`.
+Layout:
+
+```
+main.py              dev entry point
+app/
+├── main.py          app assembly: routers + static mount
+├── settings.py      settings from the environment
+├── providers.py     objects injected into routes
+├── rendering.py     the Jinja2 environment
+├── routers/         pages.py (HTML) and api.py (JSON)
+├── schemas/         Pydantic wire shapes
+├── services/        logic, free of FastAPI imports
+├── templates/
+└── static/
+```
+
+`HOST`, `PORT`, `RELOAD` and `APP_NAME` override the defaults.
 
 ## Repository mirroring
 
