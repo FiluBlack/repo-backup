@@ -31,14 +31,16 @@ set -uo pipefail
 # built-in fallbacks are applied after the manifest is read.
 SRC_ROOT=${SRC_ROOT:-}
 PATCH_BRANCH=${PATCH_BRANCH:-}
-NO_PUSH=no-push   # sentinel push URL; any push to it fails loudly
+NO_PUSH=no-push # sentinel push URL; any push to it fails loudly
 
 self_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 MANIFEST=${MANIFEST:-$self_dir/repos.toml}
 REPOS_PY=${REPOS_PY:-$self_dir/tools/repos.py}
 DRY_RUN=0
 
-ok=0; failed=0; failed_names=()
+ok=0
+failed=0
+failed_names=()
 
 usage() {
     cat <<EOF
@@ -53,12 +55,12 @@ Environment: SRC_ROOT, MANIFEST, PATCH_BRANCH (default: $PATCH_BRANCH)
 EOF
 }
 
-log()  { printf '  %s\n' "$*"; }
+log() { printf '  %s\n' "$*"; }
 warn() { printf '  !! %s\n' "$*" >&2; }
 head_() { printf '\n== %s\n' "$*"; }
 
 run() {
-    if (( DRY_RUN )); then
+    if ((DRY_RUN)); then
         printf '  + %s\n' "$*"
         return 0
     fi
@@ -70,15 +72,21 @@ run() {
 parse_url() {
     local url=$1 rest
     case $url in
-        *://*)   rest=${url#*://}; rest=${rest#*@} ;;
-        *@*:*)   rest=${url#*@}; rest=${rest/:/\/} ;;
-        *)       rest=$url ;;
+        *://*)
+            rest=${url#*://}
+            rest=${rest#*@}
+            ;;
+        *@*:*)
+            rest=${url#*@}
+            rest=${rest/:/\/}
+            ;;
+        *) rest=$url ;;
     esac
     rest=${rest%/}
     rest=${rest%.git}
     host=${rest%%/*}
     path=${rest#*/}
-    host=${host%%:*}   # drop any :port
+    host=${host%%:*} # drop any :port
     [[ -n $host && -n $path && $path == */* ]]
 }
 
@@ -121,7 +129,7 @@ ensure_tree() {
 
     if [[ ! -e $tree ]]; then
         run mkdir -p -- "$(dirname -- "$tree")" || return 1
-        if (( have_mirror )); then
+        if ((have_mirror)); then
             # Local clone: git hardlinks the objects, so this is nearly free.
             log "clone tree $tree (from mirror)"
             run git clone -- "$mirror" "$tree" || return 1
@@ -138,14 +146,14 @@ ensure_tree() {
         log "tree $tree present"
     fi
 
-    (( have_mirror )) && set_remote "$tree" mirror "$mirror"
+    ((have_mirror)) && set_remote "$tree" mirror "$mirror"
     set_remote "$tree" upstream "$url"
-    (( have_mirror )) && block_push "$tree" mirror
+    ((have_mirror)) && block_push "$tree" mirror
     block_push "$tree" upstream
 
     # Fetch only. Updating the checkout is a decision for you, not a cron job.
     run git -C "$tree" fetch --prune --tags upstream || return 1
-    (( have_mirror )) && run git -C "$tree" fetch --prune mirror
+    ((have_mirror)) && run git -C "$tree" fetch --prune mirror
     return 0
 }
 
@@ -157,7 +165,7 @@ ensure_mine() {
     fi
     set_remote "$tree" origin "$mine"
 
-    if (( DRY_RUN )); then
+    if ((DRY_RUN)); then
         printf '  + ensure branch %s exists and is pushed to origin\n' "$PATCH_BRANCH"
         return 0
     fi
@@ -177,10 +185,10 @@ apply_manifest_defaults() {
     while IFS=$'\t' read -r key value; do
         [[ -z $key ]] && continue
         case $key in
-            src_root)     [[ -z $SRC_ROOT ]] && SRC_ROOT=${value/#\~/$HOME} ;;
+            src_root) [[ -z $SRC_ROOT ]] && SRC_ROOT=${value/#\~/$HOME} ;;
             patch_branch) [[ -z $PATCH_BRANCH ]] && PATCH_BRANCH=$value ;;
         esac
-    done <<< "$1"
+    done <<<"$1"
 }
 
 process() {
@@ -196,16 +204,26 @@ process() {
 
     case $mode in
         mirror) want_mirror=1 ;;
-        tree)   want_tree=1 ;;
-        both)   want_mirror=1; want_tree=1 ;;
-        fork)   want_mirror=1; want_tree=1; want_mine=1 ;;
-        *) warn "unknown mode '$mode' for $url (use mirror|tree|both|fork)"; return 1 ;;
+        tree) want_tree=1 ;;
+        both)
+            want_mirror=1
+            want_tree=1
+            ;;
+        fork)
+            want_mirror=1
+            want_tree=1
+            want_mine=1
+            ;;
+        *)
+            warn "unknown mode '$mode' for $url (use mirror|tree|both|fork)"
+            return 1
+            ;;
     esac
 
     head_ "$host/$path  [$mode]"
-    (( want_mirror )) && { ensure_mirror "$url" "$mirror" || return 1; }
-    (( want_tree ))   && { ensure_tree "$url" "$mirror" "$tree" "$want_mirror" || return 1; }
-    (( want_mine ))   && { ensure_mine "$tree" "$mine" || return 1; }
+    ((want_mirror)) && { ensure_mirror "$url" "$mirror" || return 1; }
+    ((want_tree)) && { ensure_tree "$url" "$mirror" "$tree" "$want_mirror" || return 1; }
+    ((want_mine)) && { ensure_mine "$tree" "$mine" || return 1; }
     return 0
 }
 
@@ -214,17 +232,38 @@ while getopts ':f:r:nh' opt; do
         f) MANIFEST=$OPTARG ;;
         r) SRC_ROOT=$OPTARG ;;
         n) DRY_RUN=1 ;;
-        h) usage; exit 0 ;;
-        :) printf 'missing argument to -%s\n' "$OPTARG" >&2; exit 2 ;;
-        *) usage >&2; exit 2 ;;
+        h)
+            usage
+            exit 0
+            ;;
+        :)
+            printf 'missing argument to -%s\n' "$OPTARG" >&2
+            exit 2
+            ;;
+        *)
+            usage >&2
+            exit 2
+            ;;
     esac
 done
 shift $((OPTIND - 1))
 
-command -v git >/dev/null || { echo "git not found" >&2; exit 1; }
-command -v python3 >/dev/null || { echo "python3 not found (needed to read the manifest)" >&2; exit 1; }
-[[ -r $MANIFEST ]] || { printf 'manifest not readable: %s\n' "$MANIFEST" >&2; exit 1; }
-[[ -r $REPOS_PY ]] || { printf 'manifest reader not found: %s\n' "$REPOS_PY" >&2; exit 1; }
+command -v git >/dev/null || {
+    echo "git not found" >&2
+    exit 1
+}
+command -v python3 >/dev/null || {
+    echo "python3 not found (needed to read the manifest)" >&2
+    exit 1
+}
+[[ -r $MANIFEST ]] || {
+    printf 'manifest not readable: %s\n' "$MANIFEST" >&2
+    exit 1
+}
+[[ -r $REPOS_PY ]] || {
+    printf 'manifest reader not found: %s\n' "$REPOS_PY" >&2
+    exit 1
+}
 
 # Read the manifest up front. Assigning from a command substitution means a
 # parse error stops us here, loudly, instead of silently yielding no repos.
@@ -236,19 +275,20 @@ PATCH_BRANCH=${PATCH_BRANCH:-local/patches}
 manifest_lines=$(python3 "$REPOS_PY" emit "$MANIFEST") || exit 1
 
 printf 'manifest: %s\nroot:     %s%s\n' "$MANIFEST" "$SRC_ROOT" \
-    "$( (( DRY_RUN )) && printf '\ndry run:  no changes will be made')"
+    "$( ((DRY_RUN)) && printf '\ndry run:  no changes will be made')"
 
 while read -r url mode _rest; do
-    [[ -z ${url//[[:space:]]/} ]] && continue   # blank (an empty manifest)
+    [[ -z ${url//[[:space:]]/} ]] && continue # blank (an empty manifest)
     if process "$url" "${mode:-mirror}"; then
-        (( ok++ ))
+        ((ok++))
     else
-        (( failed++ )); failed_names+=("$url")
+        ((failed++))
+        failed_names+=("$url")
     fi
-done <<< "$manifest_lines"
+done <<<"$manifest_lines"
 
 printf '\n== done: %d ok, %d failed\n' "$ok" "$failed"
-if (( failed )); then
+if ((failed)); then
     printf '   failed: %s\n' "${failed_names[@]}"
     exit 1
 fi

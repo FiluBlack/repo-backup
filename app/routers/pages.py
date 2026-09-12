@@ -4,8 +4,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
 from app.providers import SettingsDep
-from app.services import status as status_service
 from app.rendering import templates
+from app.services import status as status_service
 
 router = APIRouter(tags=["pages"])
 

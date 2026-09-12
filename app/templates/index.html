@@ -11,5 +11,5 @@
   <dt>Uptime</dt>
   <dd>{{ status.uptime_seconds }}s</dd>
 </dl>
-<p>The same data as JSON: <a href="/api/status">/api/status</a></p>
+<p>The same data as JSON: <a href="{{ url_for('read_status') }}">/api/status</a></p>
 {% endblock %}

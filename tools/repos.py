@@ -37,8 +37,7 @@ def load(path: Path) -> dict[str, Any]:
         mode = entry.get("mode", DEFAULT_MODE)
         if mode not in VALID_MODES:
             raise ValueError(
-                f"{path}: unknown mode {mode!r} for {entry['url']} "
-                f"(use {', '.join(VALID_MODES)})"
+                f"{path}: unknown mode {mode!r} for {entry['url']} (use {', '.join(VALID_MODES)})"
             )
     return cfg
 
@@ -82,7 +81,7 @@ def add(path: Path, url: str, mode: str = DEFAULT_MODE, **extra: Any) -> bool:
 
     entry = tomlkit.table()
     if len(table_array) or path.exists():
-        entry.trivia.indent = "\n"   # blank line between entries
+        entry.trivia.indent = "\n"  # blank line between entries
     entry["url"] = url
     entry["mode"] = mode
     for key, value in extra.items():

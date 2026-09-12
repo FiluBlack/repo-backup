@@ -1,0 +1,72 @@
+# Run on every commit:    uv run pre-commit install
+# Run against everything: uv run pre-commit run --all-files
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-toml
+      - id: check-yaml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+      - id: detect-private-key
+      - id: mixed-line-ending
+
+  # Python: lint, import order, formatting
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.7
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  # Python: types. Config lives in pyproject.toml [tool.mypy].
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v2.3.1
+    hooks:
+      - id: mypy
+        # mypy runs in its own env, so the libraries it needs stubs for
+        # must be listed here rather than taken from the project venv.
+        additional_dependencies:
+          - fastapi
+          - pydantic
+          - pydantic-settings
+          - tomlkit
+          - uvicorn
+
+  # Shell: bugs, then style
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1-1
+    hooks:
+      - id: shellcheck
+
+  - repo: https://github.com/scop/pre-commit-shfmt
+    rev: v3.13.1-1
+    hooks:
+      - id: shfmt
+        args: [-i, "4", -ci, -w]
+
+  # Jinja templates
+  - repo: https://github.com/djlint/djLint
+    rev: v1.46.1
+    hooks:
+      - id: djlint-jinja
+        # The hook ships types_or: [jinja], but identify tags a .html
+        # template as 'html'. Override so the templates are actually seen.
+        files: ^app/templates/.*\.html$
+        types_or: [html]
+
+  # Markdown
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.49.1
+    hooks:
+      - id: markdownlint
+        args: [--fix]
+
+  # Prose and code typos
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.4.3
+    hooks:
+      - id: codespell
+        additional_dependencies: [tomli]

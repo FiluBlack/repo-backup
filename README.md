@@ -6,11 +6,11 @@
 uv run main.py
 ```
 
-Then open http://127.0.0.1:8000
+Then open <http://127.0.0.1:8000>
 
 Layout:
 
-```
+```text
 main.py              dev entry point
 app/
 ├── main.py          app assembly: routers + static mount
@@ -62,6 +62,7 @@ Adding from Python preserves comments and formatting:
 ```python
 from pathlib import Path
 import repos
+
 repos.add(Path("repos.toml"), "https://github.com/neovim/neovim", "both", note="editor")
 ```
 

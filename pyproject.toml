@@ -11,3 +11,39 @@ dependencies = [
     "tomlkit>=0.15.1",
     "uvicorn>=0.52.4",
 ]
+
+[dependency-groups]
+dev = [
+    "httpx2>=2.12.0",
+    "pre-commit>=4.6.2",
+]
+
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes
+    "I",        # isort — import ordering
+    "UP",       # pyupgrade — modern syntax
+    "B",        # flake8-bugbear — likely bugs
+    "SIM",      # flake8-simplify
+]
+
+[tool.mypy]
+python_version = "3.14"
+# Gradual: check what is annotated, don't demand annotations everywhere.
+check_untyped_defs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+ignore_missing_imports = true
+
+[tool.codespell]
+skip = "uv.lock,.git,*.lock"
+
+[tool.djlint]
+profile = "jinja"
+indent = 2
