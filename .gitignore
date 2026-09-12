@@ -13,7 +13,7 @@ wheels/
 .vscode/
 
 # Local repository manifest
-repo-urls.txt
+repos.toml
 
 # Local environment overrides
 .env

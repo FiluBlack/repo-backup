@@ -7,26 +7,35 @@
 #   $SRC_ROOT/github.com/junegunn/fzf.git       bare mirror (archival)
 #   $SRC_ROOT/github.com/junegunn/fzf.mine.git  bare repo for your own commits
 #
-# Driven by a manifest (default: repo-urls.txt next to this script):
+# Driven by a TOML manifest (default: repos.toml next to this script):
 #
-#   # url                                       mode
-#   https://github.com/junegunn/fzf             fork
-#   https://github.com/syncthing/syncthing      mirror
-#   https://codeberg.org/forgejo/forgejo
+#   [defaults]
+#   src_root     = "~/src"
+#   patch_branch = "local/patches"
+#
+#   [[repo]]
+#   url  = "https://github.com/junegunn/fzf"
+#   mode = "fork"
 #
 # Modes: mirror (default) | tree | both | fork
+#
+# Bash cannot parse TOML, so tools/repos.py flattens the manifest into lines
+# this script reads. That needs python3 >= 3.11 (tomllib, standard library).
 #
 # Safe to re-run: missing pieces are created, existing ones refreshed.
 # Working trees are never merged or rebased — only fetched.
 
 set -uo pipefail
 
-SRC_ROOT=${SRC_ROOT:-$HOME/src}
-PATCH_BRANCH=${PATCH_BRANCH:-local/patches}
+# Left empty here so [defaults] in the manifest can fill them in; the
+# built-in fallbacks are applied after the manifest is read.
+SRC_ROOT=${SRC_ROOT:-}
+PATCH_BRANCH=${PATCH_BRANCH:-}
 NO_PUSH=no-push   # sentinel push URL; any push to it fails loudly
 
 self_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-MANIFEST=${MANIFEST:-$self_dir/repo-urls.txt}
+MANIFEST=${MANIFEST:-$self_dir/repos.toml}
+REPOS_PY=${REPOS_PY:-$self_dir/tools/repos.py}
 DRY_RUN=0
 
 ok=0; failed=0; failed_names=()
@@ -35,7 +44,7 @@ usage() {
     cat <<EOF
 Usage: ${0##*/} [-f manifest] [-r src_root] [-n] [-h]
 
-  -f FILE  manifest of repository URLs (default: $MANIFEST)
+  -f FILE  TOML manifest of repositories (default: $MANIFEST)
   -r DIR   root of the repository tree (default: $SRC_ROOT)
   -n       dry run — print what would be done, change nothing
   -h       this help
@@ -161,6 +170,19 @@ ensure_mine() {
     fi
 }
 
+# Apply [defaults] from the manifest to any setting not already given by a
+# flag or the environment. Precedence: flag > environment > manifest > built-in.
+apply_manifest_defaults() {
+    local key value
+    while IFS=$'\t' read -r key value; do
+        [[ -z $key ]] && continue
+        case $key in
+            src_root)     [[ -z $SRC_ROOT ]] && SRC_ROOT=${value/#\~/$HOME} ;;
+            patch_branch) [[ -z $PATCH_BRANCH ]] && PATCH_BRANCH=$value ;;
+        esac
+    done <<< "$1"
+}
+
 process() {
     local url=$1 mode=$2 host path
     if ! parse_url "$url"; then
@@ -200,20 +222,30 @@ done
 shift $((OPTIND - 1))
 
 command -v git >/dev/null || { echo "git not found" >&2; exit 1; }
+command -v python3 >/dev/null || { echo "python3 not found (needed to read the manifest)" >&2; exit 1; }
 [[ -r $MANIFEST ]] || { printf 'manifest not readable: %s\n' "$MANIFEST" >&2; exit 1; }
+[[ -r $REPOS_PY ]] || { printf 'manifest reader not found: %s\n' "$REPOS_PY" >&2; exit 1; }
+
+# Read the manifest up front. Assigning from a command substitution means a
+# parse error stops us here, loudly, instead of silently yielding no repos.
+manifest_defaults=$(python3 "$REPOS_PY" defaults "$MANIFEST") || exit 1
+apply_manifest_defaults "$manifest_defaults"
+SRC_ROOT=${SRC_ROOT:-$HOME/src}
+PATCH_BRANCH=${PATCH_BRANCH:-local/patches}
+
+manifest_lines=$(python3 "$REPOS_PY" emit "$MANIFEST") || exit 1
 
 printf 'manifest: %s\nroot:     %s%s\n' "$MANIFEST" "$SRC_ROOT" \
     "$( (( DRY_RUN )) && printf '\ndry run:  no changes will be made')"
 
 while read -r url mode _rest; do
-    [[ -z ${url//[[:space:]]/} ]] && continue   # blank
-    [[ $url == \#* ]] && continue               # comment
+    [[ -z ${url//[[:space:]]/} ]] && continue   # blank (an empty manifest)
     if process "$url" "${mode:-mirror}"; then
         (( ok++ ))
     else
         (( failed++ )); failed_names+=("$url")
     fi
-done < "$MANIFEST"
+done <<< "$manifest_lines"
 
 printf '\n== done: %d ok, %d failed\n' "$ok" "$failed"
 if (( failed )); then

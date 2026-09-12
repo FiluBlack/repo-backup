@@ -6,16 +6,20 @@ would quietly break it.
 
 Line numbers refer to `repo-backup.sh` as committed.
 
+The manifest is TOML. Bash cannot parse TOML, so `tools/repos.py` flattens it
+into lines the script reads — see [The TOML bridge](#the-toml-bridge).
+
 - [What it builds](#what-it-builds)
-- [Configuration](#configuration-lines-2232) — 22–32
-- [The dry-run gate: `run`](#the-dry-run-gate-run-lines-5157) — 51–57
-- [`parse_url`](#parse_url-lines-6174) — 61–74
-- [Remote helpers](#remote-helpers-lines-7792) — 77–92
-- [`ensure_mirror`](#ensure_mirror-lines-94108) — 94–108
-- [`ensure_tree`](#ensure_tree-lines-110141) — 110–141
-- [`ensure_mine`](#ensure_mine-lines-143162) — 143–162
-- [`process`](#process-lines-164188) — 164–188
-- [Main body](#main-body-lines-190222) — 190–222
+- [The TOML bridge](#the-toml-bridge)
+- [Configuration](#configuration-lines-2838) — 28–38
+- [The dry-run gate: `run`](#the-dry-run-gate-run-lines-6066) — 60–66
+- [`parse_url`](#parse_url-lines-7083) — 70–83
+- [Remote helpers](#remote-helpers-lines-86101) — 86–101
+- [`ensure_mirror`](#ensure_mirror-lines-103117) — 103–117
+- [`ensure_tree`](#ensure_tree-lines-119150) — 119–150
+- [`ensure_mine`](#ensure_mine-lines-152171) — 152–171
+- [`process`](#process-lines-186210) — 186–210
+- [Main body](#main-body-lines-212254) — 212–254
 - [Two bash mechanics](#two-bash-mechanics)
 - [Known limits](#known-limits)
 
@@ -33,11 +37,11 @@ adjacent.
 └── fzf.mine.git       bare repo — your own commits
 ```
 
-Which of the three you get is the manifest's second column:
+Which of the three you get is each entry's `mode`:
 
 | Mode | Result |
 |---|---|
-| `mirror` | Bare archival mirror only. The default when the column is blank. |
+| `mirror` | Bare archival mirror only. The default when `mode` is omitted. |
 | `tree` | Working tree only, not archived. |
 | `both` | Mirror plus working tree. |
 | `fork` | All three, including a branch for your own patches. |
@@ -47,17 +51,68 @@ functions. Nothing else in it is load-bearing.
 
 | Stage | What happens |
 |---|---|
-| **read** | One manifest line at a time: URL plus mode. |
+| **read** | One emitted line at a time: URL plus mode. |
 | **process** | URL to three paths; mode to three flags. |
 | **ensure** | Create what's missing, refresh what exists. |
 
-## Configuration (lines 22–32)
+## The TOML bridge
+
+The manifest looks like this:
+
+```toml
+[defaults]
+src_root     = "~/src"
+patch_branch = "local/patches"
+
+[[repo]]
+url  = "https://github.com/junegunn/fzf"
+mode = "fork"
+note = "fuzzy finder"
+tags = ["cli"]
+```
+
+Bash has no TOML parser, so `tools/repos.py` reads it with `tomllib` (standard
+library, Python 3.11+) and prints one TAB-separated line per repo. The script
+consumes that instead of a file:
+
+```bash
+manifest_defaults=$(python3 "$REPOS_PY" defaults "$MANIFEST") || exit 1
+apply_manifest_defaults "$manifest_defaults"
+SRC_ROOT=${SRC_ROOT:-$HOME/src}
+PATCH_BRANCH=${PATCH_BRANCH:-local/patches}
+
+manifest_lines=$(python3 "$REPOS_PY" emit "$MANIFEST") || exit 1
+```
+
+Two deliberate choices here.
+
+**Command substitution, not process substitution.** `$( ... )` propagates the
+exit status, so a TOML syntax error or an unknown mode stops the script at line
+231 or 236. With `done < <(python3 ...)` a crashed reader yields empty input
+and the run reports a cheerful "0 ok, 0 failed" — a silent no-op is the worst
+possible failure for a backup tool.
+
+**Validation lives in Python.** `tools/repos.py` rejects an unknown `mode` and
+a `[[repo]]` with no `url` before the shell sees anything, where the error
+message can name the file, the field and the valid choices.
+
+`apply_manifest_defaults` (line 175) fills in any setting not already supplied,
+giving the precedence **flag > environment > `[defaults]` > built-in**. It also
+expands a leading `~`, which TOML stores as a literal character.
+
+> [!NOTE]
+> This is the one place the script depends on something other than git and
+> bash. `emit` and `defaults` need only `tomllib`, so any system `python3`
+> 3.11+ works with nothing installed. Writing the manifest from Python uses
+> `tomlkit` (to preserve comments), but the shell path never imports it.
+
+## Configuration (lines 28–38)
 
 ```bash
 set -uo pipefail
 
-SRC_ROOT=${SRC_ROOT:-$HOME/src}
-PATCH_BRANCH=${PATCH_BRANCH:-local/patches}
+SRC_ROOT=${SRC_ROOT:-}
+PATCH_BRANCH=${PATCH_BRANCH:-}
 NO_PUSH=no-push   # sentinel push URL; any push to it fails loudly
 
 self_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
@@ -72,6 +127,10 @@ instead. There is a second reason, in [Two bash mechanics](#two-bash-mechanics).
 otherwise the default. Every knob follows this shape, so env vars and flags
 both work without extra code.
 
+`SRC_ROOT` and `PATCH_BRANCH` start **empty** rather than at their defaults.
+That is what lets `[defaults]` in the manifest fill them in: the built-in
+fallbacks are applied at lines 233–234, after the manifest has had its turn.
+
 `NO_PUSH` is not a real URL, and that is exactly its job. Git tries to resolve
 it, fails, and prints an error instead of writing into an archival repository.
 
@@ -79,7 +138,7 @@ it, fails, and prints an error instead of writing into an archival repository.
 caller's. Wrapping it in `cd` and `pwd` makes it absolute, so the default
 manifest resolves next to the script whatever directory you run it from.
 
-## The dry-run gate: `run` (lines 51–57)
+## The dry-run gate: `run` (lines 60–66)
 
 ```bash
 run() {
@@ -99,7 +158,7 @@ through `run`**. A command that skipped it would show up as an unexplained
 change during `-n`. There are two deliberate exceptions in `ensure_mine`,
 handled by an early return.
 
-## `parse_url` (lines 61–74)
+## `parse_url` (lines 70–83)
 
 ```bash
     case $url in
@@ -137,7 +196,7 @@ Because `path` keeps every remaining segment rather than just two, GitLab
 subgroups such as `gitlab.com/group/sub/repo` nest correctly instead of being
 flattened.
 
-## Remote helpers (lines 77–92)
+## Remote helpers (lines 86–101)
 
 ```bash
     if git -C "$dir" remote get-url "$name" >/dev/null 2>&1; then
@@ -155,7 +214,7 @@ on the next run.
 `block_push` uses `git remote set-url --push`, which sets a *separate* push URL
 and leaves fetching entirely normal.
 
-## `ensure_mirror` (lines 94–108)
+## `ensure_mirror` (lines 103–117)
 
 ```bash
     if [[ -d $mirror ]]; then
@@ -185,10 +244,10 @@ at creation — that's what makes the settings self-healing.
 > deletes anything upstream no longer has. Bare repositories also keep no
 > reflog by default, so a dropped ref would leave nothing to recover from.
 >
-> Line 106 sets `core.logAllRefUpdates true` for exactly that reason.
+> Line 115 sets `core.logAllRefUpdates true` for exactly that reason.
 > Filesystem snapshots remain the real backstop.
 
-## `ensure_tree` (lines 110–141)
+## `ensure_tree` (lines 119–150)
 
 ```bash
     if [[ ! -e $tree ]]; then
@@ -216,7 +275,7 @@ costs almost nothing on disk.
 > to. Git only falls back to `origin` when no tracking remote is set, so an
 > absent `origin` is not a safeguard.
 >
-> That's what `block_push` on line 134 is for. With the push URL pointed at the
+> That's what `block_push` on line 143 is for. With the push URL pointed at the
 > sentinel, the push fails loudly instead.
 
 ```bash
@@ -229,7 +288,7 @@ move and uncommitted work is untouched. `--prune` is safe in this direction —
 it only removes stale remote-tracking refs. It's the mirror's refspec that
 makes pruning destructive, not pruning itself.
 
-## `ensure_mine` (lines 143–162)
+## `ensure_mine` (lines 152–171)
 
 `git init --bare` creates an ordinary bare repository — **not** a mirror, so
 nothing prunes it. That is the entire reason it exists as a separate directory
@@ -253,7 +312,7 @@ The branch is created **only when missing**. On later runs the script leaves it
 alone — after a rebase your patches need `--force-with-lease`, and that is not
 a decision a scheduled job should be making.
 
-## `process` (lines 164–188)
+## `process` (lines 186–210)
 
 ```bash
     local base=$SRC_ROOT/$host/$path
@@ -274,11 +333,11 @@ rather than silently defaulting to something destructive.
     return 0
 ```
 
-A false `(( ... ))` yields exit status 1. Without the explicit `return 0`, a
+A false `(( ... ))` yields exit status 1. Without the explicit `return 0` on line 209, a
 `mirror`-mode repository — which leaves the last two flags unset — would
 succeed and then report itself as failed.
 
-## Main body (lines 190–222)
+## Main body (lines 212–254)
 
 `getopts ':f:r:nh'` — the leading colon selects silent error mode, so the
 script prints its own messages through the `:` and `*` cases instead of
@@ -286,23 +345,24 @@ getopts' built-in ones. Trailing colons mark the flags that take an argument.
 
 ```bash
 while read -r url mode _rest; do
-    [[ -z ${url//[[:space:]]/} ]] && continue   # blank
-    [[ $url == \#* ]] && continue               # comment
+    [[ -z ${url//[[:space:]]/} ]] && continue   # blank (an empty manifest)
     if process "$url" "${mode:-mirror}"; then
         (( ok++ ))
     else
         (( failed++ )); failed_names+=("$url")
     fi
-done < "$MANIFEST"
+done <<< "$manifest_lines"
 ```
 
 `read` splits on whitespace into exactly those three variables, with anything
-left over landing in `_rest` and being ignored — which is what makes trailing
-comments harmless. `-r` stops backslashes being interpreted.
+left over landing in `_rest`. `-r` stops backslashes being interpreted.
 
-The input arrives by redirect on line 216, not a pipe, and that distinction is
-load-bearing: a piped `while` runs in a subshell, and the `ok` and `failed`
-counters would vanish when it exited.
+The input is a **here-string** over the already-captured `$manifest_lines`, not
+a pipe, and that distinction is load-bearing: a piped `while` runs in a
+subshell, and the `ok` and `failed` counters would vanish when it exited.
+
+The blank-line guard remains because a manifest with no `[[repo]]` entries
+emits an empty string, and `<<< ""` still feeds the loop one empty line.
 
 At the end, `printf '   failed: %s\n' "${failed_names[@]}"` prints one line per
 failure with no loop — `printf` reuses its format string until the arguments
@@ -313,7 +373,7 @@ run out.
 ### Dynamic scoping returns two values
 
 `parse_url` assigns `host` and `path` without `local`, yet they don't leak into
-the global namespace — because `process` declares `local host path` on line 165
+the global namespace — because `process` declares `local host path` on line 187
 before calling it. In bash a `local` is visible to everything the function
 calls, which is how one function here returns two values.
 
@@ -341,3 +401,5 @@ exit status 1.
 - A mirror reproduces upstream deletions and force-pushes faithfully. It
   protects against a project disappearing, not against one rewriting its
   history.
+- Reading the manifest needs `python3` 3.11 or newer on PATH. On a minimal
+  host where only git and bash are guaranteed, that is a new prerequisite.

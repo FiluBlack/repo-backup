@@ -1,0 +1,31 @@
+# repo-backup manifest.
+#
+# Copy to repos.toml and edit. repos.toml is gitignored: it is a list of
+# what you mirror, which you may not want published.
+#
+# Settings here are overridden by the environment and by command-line flags.
+
+[defaults]
+src_root     = "~/src"
+patch_branch = "local/patches"
+
+# mode = mirror | tree | both | fork   (default: mirror)
+#
+#   mirror  bare archival mirror only
+#   tree    working tree only, not archived
+#   both    mirror + working tree
+#   fork    mirror + working tree + .mine.git for your own patches
+
+[[repo]]
+url  = "https://github.com/junegunn/fzf"
+mode = "fork"
+note = "fuzzy finder"
+tags = ["cli"]
+
+[[repo]]
+url  = "https://github.com/syncthing/syncthing"
+mode = "mirror"
+tags = ["infra"]
+
+[[repo]]
+url = "https://codeberg.org/forgejo/forgejo"
