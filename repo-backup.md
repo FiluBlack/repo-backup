@@ -4,22 +4,23 @@ A line-by-line reading of the mirror-and-fork script: what each block does,
 which git semantics it leans on, and the three places where a small change
 would quietly break it.
 
-Line numbers refer to `repo-backup.sh` as committed.
+Sections follow the order of `repo-backup.sh`, and each quotes the code it
+discusses — search the file for the snippet to find it.
 
 The manifest is TOML. Bash cannot parse TOML, so `tools/repos.py` flattens it
 into lines the script reads — see [The TOML bridge](#the-toml-bridge).
 
 - [What it builds](#what-it-builds)
 - [The TOML bridge](#the-toml-bridge)
-- [Configuration](#configuration-lines-2840) — 28–40
-- [The dry-run gate: `run`](#the-dry-run-gate-run-lines-6268) — 62–68
-- [`parse_url`](#parse_url-lines-7291) — 72–91
-- [Remote helpers](#remote-helpers-lines-94109) — 94–109
-- [`ensure_mirror`](#ensure_mirror-lines-111125) — 111–125
-- [`ensure_tree`](#ensure_tree-lines-127158) — 127–158
-- [`ensure_mine`](#ensure_mine-lines-160179) — 160–179
-- [`process`](#process-lines-194228) — 194–228
-- [Main body](#main-body-lines-230294) — 230–294
+- [Configuration](#configuration)
+- [The dry-run gate: `run`](#the-dry-run-gate-run)
+- [`parse_url`](#parse_url)
+- [Remote helpers](#remote-helpers)
+- [`ensure_mirror`](#ensure_mirror)
+- [`ensure_tree`](#ensure_tree)
+- [`ensure_mine`](#ensure_mine)
+- [`process`](#process)
+- [Main body](#main-body)
 - [Two bash mechanics](#two-bash-mechanics)
 - [Known limits](#known-limits)
 
@@ -87,8 +88,8 @@ manifest_lines=$(python3 "$REPOS_PY" emit "$MANIFEST") || exit 1
 Two deliberate choices here.
 
 **Command substitution, not process substitution.** `$( ... )` propagates the
-exit status, so a TOML syntax error or an unknown mode stops the script at line
-270 or 275. With `done < <(python3 ...)` a crashed reader yields empty input
+exit status, so a TOML syntax error or an unknown mode stops the script right
+there. With `done < <(python3 ...)` a crashed reader yields empty input
 and the run reports a cheerful "0 ok, 0 failed" — a silent no-op is the worst
 possible failure for a backup tool.
 
@@ -96,7 +97,7 @@ possible failure for a backup tool.
 a `[[repo]]` with no `url` before the shell sees anything, where the error
 message can name the file, the field and the valid choices.
 
-`apply_manifest_defaults` (line 183) fills in any setting not already supplied,
+`apply_manifest_defaults` fills in any setting not already supplied,
 giving the precedence **flag > environment > `[defaults]` > built-in**. It also
 expands a leading `~`, which TOML stores as a literal character.
 
@@ -106,7 +107,7 @@ expands a leading `~`, which TOML stores as a literal character.
 > 3.11+ works with nothing installed. Writing the manifest from Python uses
 > `tomlkit` (to preserve comments), but the shell path never imports it.
 
-## Configuration (lines 28–40)
+## Configuration
 
 ```bash
 set -uo pipefail
@@ -129,7 +130,8 @@ both work without extra code.
 
 `SRC_ROOT` and `PATCH_BRANCH` start **empty** rather than at their defaults.
 That is what lets `[defaults]` in the manifest fill them in: the built-in
-fallbacks are applied at lines 272–273, after the manifest has had its turn.
+fallbacks are applied after the manifest has had its turn, in the preflight
+block just above the loop.
 
 `NO_PUSH` is not a real URL, and that is exactly its job. Git tries to resolve
 it, fails, and prints an error instead of writing into an archival repository.
@@ -138,7 +140,7 @@ it, fails, and prints an error instead of writing into an archival repository.
 caller's. Wrapping it in `cd` and `pwd` makes it absolute, so the default
 manifest resolves next to the script whatever directory you run it from.
 
-## The dry-run gate: `run` (lines 62–68)
+## The dry-run gate: `run`
 
 ```bash
 run() {
@@ -158,7 +160,7 @@ through `run`**. A command that skipped it would show up as an unexplained
 change during `-n`. There are two deliberate exceptions in `ensure_mine`,
 handled by an early return.
 
-## `parse_url` (lines 72–91)
+## `parse_url`
 
 ```bash
     case $url in
@@ -202,7 +204,7 @@ Because `path` keeps every remaining segment rather than just two, GitLab
 subgroups such as `gitlab.com/group/sub/repo` nest correctly instead of being
 flattened.
 
-## Remote helpers (lines 94–109)
+## Remote helpers
 
 ```bash
     if git -C "$dir" remote get-url "$name" >/dev/null 2>&1; then
@@ -220,7 +222,7 @@ on the next run.
 `block_push` uses `git remote set-url --push`, which sets a *separate* push URL
 and leaves fetching entirely normal.
 
-## `ensure_mirror` (lines 111–125)
+## `ensure_mirror`
 
 ```bash
     if [[ -d $mirror ]]; then
@@ -250,10 +252,11 @@ at creation — that's what makes the settings self-healing.
 > deletes anything upstream no longer has. Bare repositories also keep no
 > reflog by default, so a dropped ref would leave nothing to recover from.
 >
-> Line 123 sets `core.logAllRefUpdates true` for exactly that reason.
+> The `core.logAllRefUpdates true` call at the end of `ensure_mirror` is there
+> for exactly that reason.
 > Filesystem snapshots remain the real backstop.
 
-## `ensure_tree` (lines 127–158)
+## `ensure_tree`
 
 ```bash
     if [[ ! -e $tree ]]; then
@@ -281,7 +284,8 @@ costs almost nothing on disk.
 > to. Git only falls back to `origin` when no tracking remote is set, so an
 > absent `origin` is not a safeguard.
 >
-> That's what `block_push` on line 151 is for. With the push URL pointed at the
+> That's what the `block_push` calls at the end of `ensure_tree` are for. With
+> the push URL pointed at the
 > sentinel, the push fails loudly instead.
 
 ```bash
@@ -294,7 +298,7 @@ move and uncommitted work is untouched. `--prune` is safe in this direction —
 it only removes stale remote-tracking refs. It's the mirror's refspec that
 makes pruning destructive, not pruning itself.
 
-## `ensure_mine` (lines 160–179)
+## `ensure_mine`
 
 `git init --bare` creates an ordinary bare repository — **not** a mirror, so
 nothing prunes it. That is the entire reason it exists as a separate directory
@@ -318,7 +322,7 @@ The branch is created **only when missing**. On later runs the script leaves it
 alone — after a rebase your patches need `--force-with-lease`, and that is not
 a decision a scheduled job should be making.
 
-## `process` (lines 194–228)
+## `process`
 
 ```bash
     local base=$SRC_ROOT/$host/$path
@@ -339,11 +343,12 @@ rather than silently defaulting to something destructive.
     return 0
 ```
 
-A false `((...))` yields exit status 1. Without the explicit `return 0` on line 227, a
+A false `((...))` yields exit status 1. Without the explicit `return 0` closing
+`process`, a
 `mirror`-mode repository — which leaves the last two flags unset — would
 succeed and then report itself as failed.
 
-## Main body (lines 230–294)
+## Main body
 
 `getopts ':f:r:nh'` — the leading colon selects silent error mode, so the
 script prints its own messages through the `:` and `*` cases instead of
@@ -380,7 +385,7 @@ run out.
 ### Dynamic scoping returns two values
 
 `parse_url` assigns `host` and `path` without `local`, yet they don't leak into
-the global namespace — because `process` declares `local host path` on line 195
+the global namespace — because `process` declares `local url=$1 mode=$2 host path`
 before calling it. In bash a `local` is visible to everything the function
 calls, which is how one function here returns two values.
 
